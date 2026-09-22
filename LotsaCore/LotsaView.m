@@ -1,12 +1,17 @@
 #import "LotsaView.h"
 
 #import <sys/time.h>
+#import <CoreGraphics/CoreGraphics.h>
+
+@interface LotsaView ()
+-(void)localizeConfigView:(NSView *)rootView;
+@end
 
 
 
 @implementation LotsaView
 
--(id)initWithFrame:(NSRect)frame isPreview:(BOOL)preview useGL:(BOOL)usegl
+-(id)initWithFrame:(NSRect)frame isPreview:(BOOL)preview
 {
 	if((self=[super initWithFrame:frame isPreview:preview]))
 	{
@@ -19,47 +24,6 @@
 
 		prevtime=starttime=0;
 
-		if(usegl)
-		{
-			NSOpenGLPixelFormatAttribute attrs[]={ 
-				//NSOpenGLPFAAllRenderers,
-				//NSOpenGLPFASingleRenderer,
-				NSOpenGLPFANoRecovery,
-				NSOpenGLPFADoubleBuffer,
-				NSOpenGLPFAAccelerated,
-				//NSOpenGLPFAScreenMask,
-				//[self getScreenMask],
-				//NSOpenGLPFAAlphaSize,2,
-				//NSOpenGLPFAColorSize,32,
-				//NSOpenGLPFADepthSize,32,
-				NSOpenGLPFADepthSize,16,
-			(NSOpenGLPixelFormatAttribute)0};
-
-			NSOpenGLPixelFormat *format=[[NSOpenGLPixelFormat alloc] initWithAttributes:attrs];
-			view=[[NSOpenGLView alloc] initWithFrame:NSMakeRect(0,0,frame.size.width,frame.size.height) pixelFormat:format];
-
-			if(view)
-			{
-				[self setAutoresizesSubviews:YES];
-				[self addSubview:view];
-				[view prepareOpenGL];
-                [view setWantsBestResolutionOpenGLSurface:YES];
-
-				[[view openGLContext] makeCurrentContext];
-
-				GLint val=1;
-				[[view openGLContext] setValues:&val forParameter:NSOpenGLCPSwapInterval];
-
-				[NSOpenGLContext clearCurrentContext];
-
-				if(![[self class] performGammaFade]) [view setHidden:YES];
-			}
-			else NSLog(@"Error: %@ failed to initialize NSOpenGLView!",[self description]);
-		}
-		else
-		{
-			view=nil;
-		}
     }
 
     return self;
@@ -83,8 +47,6 @@
 -(void)startAnimation
 {
 	[super startAnimation];
-
-	[view setHidden:NO];
 
 	if(!clockwin&&!ispreview)
 	{
@@ -127,12 +89,63 @@
 		NSNib *nib=[[NSNib alloc] initWithNibNamed:configname bundle:[NSBundle bundleForClass:[self class]]];
 		[nib instantiateNibWithOwner:self topLevelObjects:nil];
 	}
+	if(!configwindow) return nil;
 
 	ScreenSaverDefaults *defaults=[self defaults];
 	[self updateConfigWindow:configwindow usingDefaults:defaults];
 	[clockpopup selectItemAtIndex:[[self defaults] integerForKey:@"clockSize"]];
+	[self localizeConfigView:[configwindow contentView]];
 
 	return configwindow;
+}
+
+-(void)localizeConfigView:(NSView *)rootView
+{
+	// This project still uses a compiled legacy NIB.  Modern nib localization
+	// does not apply its external strings table to those archived controls, so
+	// localize their visible titles after unarchiving.
+	NSDictionary *keys=@{
+		@"OK":@"83.title", @"Cancel":@"84.title",
+		@"Detail:":@"86.title", @"Accuracy:":@"87.title",
+		@"High":@"88.title", @"Low":@"89.title",
+		@"Slow motion:":@"93.title", @"Slow":@"94.title",
+		@"Normal":@"95.title", @"Rainfall:":@"98.title",
+		@"Water depth:":@"99.title", @"Pouring":@"100.title",
+		@"Gentle":@"101.title", @"Deep":@"102.title",
+		@"Shallow":@"103.title", @"Image:":@"106.title",
+		@"None":@"69.title", @"Small":@"71.title",
+		@"Medium":@"68.title", @"Large":@"70.title",
+		@"Dark":@"109.title", @"Dimming:":@"111.title",
+		@"Clock:":@"112.title"
+	};
+	NSBundle *bundle=[NSBundle bundleForClass:[self class]];
+	NSCharacterSet *whitespace=[NSCharacterSet whitespaceAndNewlineCharacterSet];
+
+	if([rootView isKindOfClass:[NSPopUpButton class]])
+	{
+		for(NSMenuItem *item in [(NSPopUpButton *)rootView itemArray])
+		{
+			NSString *english=[[item title] stringByTrimmingCharactersInSet:whitespace];
+			NSString *key=[keys objectForKey:english];
+			if(key) [item setTitle:[bundle localizedStringForKey:key value:english table:@"ConfigSheet"]];
+		}
+	}
+	else if([rootView isKindOfClass:[NSButton class]])
+	{
+		NSButton *button=(NSButton *)rootView;
+		NSString *english=[[button title] stringByTrimmingCharactersInSet:whitespace];
+		NSString *key=[keys objectForKey:english];
+		if(key) [button setTitle:[bundle localizedStringForKey:key value:english table:@"ConfigSheet"]];
+	}
+	else if([rootView isKindOfClass:[NSTextField class]])
+	{
+		NSTextField *field=(NSTextField *)rootView;
+		NSString *english=[[field stringValue] stringByTrimmingCharactersInSet:whitespace];
+		NSString *key=[keys objectForKey:english];
+		if(key) [field setStringValue:[bundle localizedStringForKey:key value:english table:@"ConfigSheet"]];
+	}
+
+	for(NSView *subview in [rootView subviews]) [self localizeConfigView:subview];
 }
 
 
@@ -203,10 +216,6 @@
 
 
 
--(NSOpenGLView *)view { return view; }
-
--(NSOpenGLContext *)openGLContext { return [view openGLContext]; }
-
 -(BOOL)isPreview { return ispreview; }
 
 
@@ -248,25 +257,25 @@
 
 
 
--(NSOpenGLPixelFormatAttribute)getScreenMaskForFrame:(NSRect)frame
-{
-	CGDirectDisplayID dispid;
-	NSScreen *screen;
-	NSEnumerator *enumerator=[[NSScreen screens] objectEnumerator];
-
-	while((screen=[enumerator nextObject]))
-	{
-		if(!NSIsEmptyRect(NSIntersectionRect([screen frame],frame))) break;
-	}
-
-	if(screen) dispid=(CGDirectDisplayID)[[[screen deviceDescription] objectForKey:@"NSScreenNumber"] unsignedIntValue];
-	else dispid=CGMainDisplayID();
-
-	return CGDisplayIDToOpenGLDisplayMask(dispid);
-}
-
 -(NSBitmapImageRep *)grabScreenShot
 {
+	// On recent macOS releases a legacy screen saver runs in an isolated host.
+	// Capturing the windows below the saver then returns the host's gray backing
+	// surface rather than the desktop.  Ask Workspace for the wallpaper file
+	// first; this public API has been available since macOS 10.6 and does not
+	// require Screen Recording permission.
+	NSScreen *targetScreen=[[self window] screen];
+	if(!targetScreen) targetScreen=[NSScreen mainScreen];
+	NSURL *wallpaperURL=[[NSWorkspace sharedWorkspace] desktopImageURLForScreen:targetScreen];
+	if(wallpaperURL)
+	{
+		NSData *wallpaperData=[NSData dataWithContentsOfURL:wallpaperURL];
+		NSBitmapImageRep *wallpaper=[NSBitmapImageRep imageRepWithData:wallpaperData];
+		if(wallpaper) return wallpaper;
+	}
+
+	// Keep the historical window capture as a fallback for desktops that do
+	// not expose a readable wallpaper file (for example, some managed setups).
 	NSInteger windowid=[[self window] windowNumber];
 	NSRect bounds=[[[self window] screen] frame];
 

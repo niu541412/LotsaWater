@@ -1,0 +1,3 @@
+/* Simplified Chinese localization of Info.plist keys. */
+CFBundleName = "LotsaWater";
+NSHumanReadableCopyright = "无版权，已发布至公共领域";

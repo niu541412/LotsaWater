@@ -237,7 +237,7 @@ Gw
                         <autoresizingMask key="autoresizingMask" flexibleMaxX="YES" flexibleMinY="YES"/>
                     </box>
                     <imageView fixedFrame="YES" translatesAutoresizingMaskIntoConstraints="NO" id="55" customClass="LWImagePicker">
-                        <rect key="frame" x="311" y="88" width="246" height="207"/>
+                        <rect key="frame" x="314" y="116" width="240" height="150"/>
                         <autoresizingMask key="autoresizingMask" widthSizable="YES" heightSizable="YES"/>
                         <imageCell key="cell" selectable="YES" editable="YES" alignment="left" imageScaling="proportionallyDown" imageFrameStyle="grayBezel" id="104"/>
                         <connections>
@@ -247,13 +247,13 @@ Gw
                     <popUpButton imageHugsTitle="YES" verticalHuggingPriority="750" fixedFrame="YES" translatesAutoresizingMaskIntoConstraints="NO" id="56">
                         <rect key="frame" x="362" y="301" width="195" height="26"/>
                         <autoresizingMask key="autoresizingMask" flexibleMinX="YES" flexibleMinY="YES"/>
-                        <popUpButtonCell key="cell" type="push" title="Desktop snapshot" bezelStyle="rounded" alignment="left" lineBreakMode="truncatingTail" state="on" borderStyle="borderAndBezel" inset="2" arrowPosition="arrowAtCenter" preferredEdge="maxY" selectedItem="59" id="105">
+                        <popUpButtonCell key="cell" type="push" title="Wallpaper" bezelStyle="rounded" alignment="left" lineBreakMode="truncatingTail" state="on" borderStyle="borderAndBezel" inset="2" arrowPosition="arrowAtCenter" preferredEdge="maxY" selectedItem="59" id="105">
                             <behavior key="behavior" lightByBackground="YES" lightByGray="YES"/>
                             <font key="font" metaFont="menu"/>
                             <menu key="menu" title="OtherViews" id="57">
                                 <items>
-                                    <menuItem title="Desktop snapshot" state="on" id="59"/>
-                                    <menuItem title="Custom" id="58"/>
+                                    <menuItem title="Wallpaper" state="on" id="59"/>
+                                    <menuItem title="Custom image" id="58"/>
                                 </items>
                             </menu>
                         </popUpButtonCell>

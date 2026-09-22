@@ -1,10 +1,9 @@
-#define GL_EXT_compiled_vertex_array 1
-
 #import "LotsaCore/LotsaView.h"
 #import "Water.h"
 
-#import <OpenGL/gl.h>
-#import <OpenGL/glu.h>
+#import <Metal/Metal.h>
+#import <MetalKit/MetalKit.h>
+#import <simd/simd.h>
 
 #import "LotsaCore/NameMangler.h"
 #define LotsaWaterView MangleClassName(LotsaWaterView)
@@ -12,22 +11,42 @@
 
 @class ImagePicker;
 
-@interface LotsaWaterView:LotsaView
+typedef struct
+{
+	vector_float2 position;
+	vector_float2 texCoord;
+	vector_float3 normal;
+	float intensity;
+} LotsaWaterMetalVertex;
+
+typedef struct
+{
+	vector_float2 waterSize;
+} LotsaWaterMetalUniforms;
+
+@interface LotsaWaterView:LotsaView <MTKViewDelegate>
 {
 	NSBitmapImageRep *screenshot;
 
-	GLuint backtex,refltex;
+	MTKView *metalView;
+	id<MTLDevice> metalDevice;
+	id<MTLCommandQueue> commandQueue;
+	id<MTLRenderPipelineState> pipelineState;
+	id<MTLTexture> wallpaperTexture;
+	id<MTLTexture> reflectionTexture;
+	id<MTLBuffer> vertexBuffer;
+	id<MTLBuffer> indexBuffer;
+	NSUInteger indexCount;
+
 	double t,t_next,t_div;
 	double raintime,waterdepth;
 
-	int tex_w,tex_h;
+	// Portion of the source image used to fill the current screen.
+	float tex_u0,tex_v0,tex_uscale,tex_vscale;
 	float water_w,water_h;
+	BOOL animationInitialized;
 
 	Water wet;
-
-	struct texcoord { float u,v; } *tex;
-	struct color { GLubyte r,g,b,a; } *col;
-	struct vertexcoord { float x,y; } *vert;
 
 	IBOutlet NSSlider *detail;
 	IBOutlet NSSlider *accuracy;

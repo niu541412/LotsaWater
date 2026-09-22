@@ -1,16 +1,24 @@
 #import "LotsaWaterView.h"
-#import "LotsaCore/GLConverter.h"
 #import "LotsaCore/Random.h"
 
+@interface LotsaWaterView ()
+-(BOOL)configureMetal;
+-(id<MTLTexture>)textureFromBitmapImageRep:(NSBitmapImageRep *)imageRep;
+@end
 
 
 @implementation LotsaWaterView
 
 -(id)initWithFrame:(NSRect)frame isPreview:(BOOL)preview
 {
-	if((self=[super initWithFrame:frame isPreview:preview useGL:YES]))
+	if((self=[super initWithFrame:frame isPreview:preview]))
 	{
 		screenshot=nil;
+		animationInitialized=NO;
+		metalView=nil;
+		metalDevice=nil;
+		commandQueue=nil;
+		pipelineState=nil;
 
 		[self setAnimationTimeInterval:1/60.0];
 		[self setConfigName:@"ConfigSheet"];
@@ -20,16 +28,109 @@
 			@"0",@"slowMotion",
 			@"0.5",@"rainFall",
 			@"0.5",@"depth",
-			@"0",@"imageSource",
-			@"",@"imageFileName",
 			@"1",@"imageFade",
 			@"0",@"clockSize",
 		nil]];
 
-		screenshot=nil;
+		[self configureMetal];
     }
 
     return self;
+}
+
+-(BOOL)configureMetal
+{
+	metalDevice=MTLCreateSystemDefaultDevice();
+	if(!metalDevice)
+	{
+		NSLog(@"LotsaWater: Metal is not available on this Mac");
+		return NO;
+	}
+
+	metalView=[[MTKView alloc] initWithFrame:[self bounds] device:metalDevice];
+	[metalView setAutoresizingMask:NSViewWidthSizable|NSViewHeightSizable];
+	[metalView setColorPixelFormat:MTLPixelFormatBGRA8Unorm];
+	[metalView setClearColor:MTLClearColorMake(0,0,0,1)];
+	[metalView setFramebufferOnly:YES];
+	[metalView setDelegate:self];
+	[metalView setPaused:YES];
+	[metalView setEnableSetNeedsDisplay:YES];
+	[metalView setHidden:YES];
+	[self setAutoresizesSubviews:YES];
+	[self addSubview:metalView];
+
+	commandQueue=[metalDevice newCommandQueue];
+	NSError *error=nil;
+	NSBundle *bundle=[NSBundle bundleForClass:[self class]];
+	id<MTLLibrary> library=[metalDevice newDefaultLibraryWithBundle:bundle error:&error];
+	if(!library)
+	{
+		NSLog(@"LotsaWater: unable to load Metal shaders: %@",error);
+		return NO;
+	}
+
+	id<MTLFunction> vertexFunction=[library newFunctionWithName:@"lotsaWaterVertex"];
+	id<MTLFunction> fragmentFunction=[library newFunctionWithName:@"lotsaWaterFragment"];
+	if(!vertexFunction||!fragmentFunction)
+	{
+		NSLog(@"LotsaWater: Metal shader functions are missing");
+		return NO;
+	}
+
+	MTLRenderPipelineDescriptor *descriptor=[[MTLRenderPipelineDescriptor alloc] init];
+	[descriptor setVertexFunction:vertexFunction];
+	[descriptor setFragmentFunction:fragmentFunction];
+	[[descriptor colorAttachments][0] setPixelFormat:[metalView colorPixelFormat]];
+	pipelineState=[metalDevice newRenderPipelineStateWithDescriptor:descriptor error:&error];
+	if(!pipelineState)
+	{
+		NSLog(@"LotsaWater: unable to create Metal pipeline: %@",error);
+		return NO;
+	}
+
+	return YES;
+}
+
+-(id<MTLTexture>)textureFromBitmapImageRep:(NSBitmapImageRep *)imageRep
+{
+	CGImageRef image=[imageRep CGImage];
+	if(!image||!metalDevice) return nil;
+
+	NSUInteger width=CGImageGetWidth(image);
+	NSUInteger height=CGImageGetHeight(image);
+	NSUInteger bytesPerRow=width*4;
+	NSMutableData *pixels=[NSMutableData dataWithLength:bytesPerRow*height];
+	CGColorSpaceRef colorSpace=CGColorSpaceCreateDeviceRGB();
+	CGContextRef context=CGBitmapContextCreate([pixels mutableBytes],width,height,8,bytesPerRow,
+		colorSpace,kCGImageAlphaPremultipliedFirst|kCGBitmapByteOrder32Little);
+	CGColorSpaceRelease(colorSpace);
+	if(!context)
+	{
+		NSLog(@"LotsaWater: unable to create a BGRA bitmap context");
+		return nil;
+	}
+
+	// CGBitmapContext and Metal use opposite display-space Y directions here;
+	// drawing without an extra transform keeps the wallpaper upright onscreen.
+	CGContextDrawImage(context,CGRectMake(0,0,width,height),image);
+	CGContextRelease(context);
+
+	MTLTextureDescriptor *descriptor=[MTLTextureDescriptor
+		texture2DDescriptorWithPixelFormat:MTLPixelFormatBGRA8Unorm
+		width:width height:height mipmapped:NO];
+	[descriptor setUsage:MTLTextureUsageShaderRead];
+	id<MTLTexture> texture=[metalDevice newTextureWithDescriptor:descriptor];
+	if(!texture)
+	{
+		NSLog(@"LotsaWater: unable to allocate a Metal texture");
+		return nil;
+	}
+
+	[texture replaceRegion:MTLRegionMake2D(0,0,width,height)
+		mipmapLevel:0
+		withBytes:[pixels bytes]
+		bytesPerRow:bytesPerRow];
+	return texture;
 }
 
 -(void)dealloc
@@ -41,26 +142,18 @@
 -(void)drawRect:(NSRect)rect
 {
 	if(!screenshot)
-	if(ispreview||[[self defaults] integerForKey:@"imageSource"]==0)
-	{
 		screenshot=[self grabScreenShot];
-	}
-    
-    CGFloat scale = [[[self window] screen] backingScaleFactor];
-    if (scale != 1.0) {
-        rect.size.width *= scale;
-        rect.size.height *= scale;
-    }
-    [screenshot drawInRect:rect fromRect:NSZeroRect operation:0 fraction:1.0 respectFlipped:NO hints:NULL];
+
+	// AppKit drawing coordinates are points, not backing pixels.  Scaling this
+	// rect on Retina displays leaves the image anchored in the lower-left.
+    [screenshot drawInRect:[self bounds] fromRect:NSZeroRect operation:0 fraction:1.0 respectFlipped:NO hints:NULL];
 }
 
 -(void)startAnimationWithDefaults:(ScreenSaverDefaults *)defaults
 {
-	if(!screenshot)
-	if(ispreview||[[self defaults] integerForKey:@"imageSource"]==0)
-	{
-		screenshot=[self grabScreenShot];
-	}
+	animationInitialized=NO;
+	// Refresh the current desktop wallpaper for every new run.
+	screenshot=[self grabScreenShot];
 
 	SeedRandom(time(0));
 
@@ -96,45 +189,62 @@
 	raintime=4*0.9*(rain-1)*(rain-1)+0.1;
 	waterdepth=0.2+d*d*4*1.8;
 
-	int srcid=[defaults integerForKey:@"imageSource"];
-	NSString *imagename=[defaults stringForKey:@"imageFileName"];
-
-	[[self openGLContext] makeCurrentContext];
-
-	switch(srcid)
+	if(!pipelineState||!screenshot)
 	{
-		case 0:
-			backtex=[GLConverter uncopiedTextureRectangleFromRep:screenshot];
-			tex_w=[screenshot pixelsWide];
-			tex_h=[screenshot pixelsHigh];
-		break;
-		case 1:
-		{
-			NSBitmapImageRep *rep=[NSImageRep imageRepWithContentsOfFile:imagename];
-			backtex=[GLConverter textureRectangleFromRep:rep];
-			tex_w=[rep pixelsWide];
-			tex_h=[rep pixelsHigh];
-		}
-		break;
+		[metalView setHidden:YES];
+		return;
 	}
-    int screen_w = tex_w, screen_h = tex_h;
+
+	[metalView setHidden:NO];
+	[metalView layoutSubtreeIfNeeded];
+	NSRect backingBounds=[metalView convertRectToBacking:[metalView bounds]];
+	[metalView setDrawableSize:backingBounds.size];
+
+	wallpaperTexture=[self textureFromBitmapImageRep:screenshot];
+	reflectionTexture=[self textureFromBitmapImageRep:[self imageRepFromBundle:@"reflections.png"]];
+	if(!wallpaperTexture||!reflectionTexture)
+	{
+		[metalView setHidden:YES];
+		return;
+	}
+
+	int tex_w=(int)[wallpaperTexture width];
+	int tex_h=(int)[wallpaperTexture height];
+
+	// The wallpaper file is often larger than the display (and may have a
+	// different aspect ratio).  It is a texture size, not the Metal viewport.
+	int screen_w=(int)NSWidth(backingBounds);
+	int screen_h=(int)NSHeight(backingBounds);
+	if(screen_w<=0||screen_h<=0)
+	{
+		screen_w=tex_w;
+		screen_h=tex_h;
+	}
 
 	float screen_scale=1.3/sqrtf((float)(screen_w*screen_w+screen_h*screen_h));
 	float screen_fw=(float)screen_w*screen_scale;
 	float screen_fh=(float)screen_h*screen_scale;
 
-	if(screen_fw/screen_fh<(float)tex_w/(float)tex_h)
+	// Centre-crop the wallpaper to cover the screen, just like a desktop
+	// background.  Metal samples the cropped area with normalized coordinates.
+	tex_u0=0;
+	tex_v0=0;
+	tex_uscale=1;
+	tex_vscale=1;
+	float screen_aspect=(float)screen_w/(float)screen_h;
+	float texture_aspect=(float)tex_w/(float)tex_h;
+	if(texture_aspect>screen_aspect)
 	{
-		water_w=screen_fw;
-		water_h=screen_fw*(float)tex_h/(float)tex_w;
+		tex_uscale=screen_aspect/texture_aspect;
+		tex_u0=(1-tex_uscale)/2;
 	}
-	else
+	else if(texture_aspect<screen_aspect)
 	{
-		water_w=screen_fh*(float)tex_w/(float)tex_h;
-		water_h=screen_fh;
+		tex_vscale=texture_aspect/screen_aspect;
+		tex_v0=(1-tex_vscale)/2;
 	}
-
-	refltex=[GLConverter texture2DFromRep:[self imageRepFromBundle:@"reflections.png"]];
+	water_w=screen_fw;
+	water_h=screen_fh;
 
 	InitWater(&wet,gridsize,gridsize,max_p,max_p,1,1,2*water_w,2*water_h);
 
@@ -143,10 +253,20 @@
 	AddWaterStateAtTime(&wet,&rnd,0);
 	CleanupWaterState(&rnd);*/
 
-	tex=malloc(wet.w*wet.h*sizeof(struct texcoord));
-	col=malloc(wet.w*wet.h*sizeof(struct color));
-	vert=malloc(wet.w*wet.h*sizeof(struct vertexcoord));
+	NSUInteger vertexCount=(NSUInteger)wet.w*(NSUInteger)wet.h;
+	indexCount=(NSUInteger)(wet.w-1)*(NSUInteger)(wet.h-1)*6;
+	vertexBuffer=[metalDevice newBufferWithLength:vertexCount*sizeof(LotsaWaterMetalVertex)
+		options:MTLResourceStorageModeShared];
+	indexBuffer=[metalDevice newBufferWithLength:indexCount*sizeof(uint32_t)
+		options:MTLResourceStorageModeShared];
+	if(!vertexBuffer||!indexBuffer)
+	{
+		CleanupWater(&wet);
+		[metalView setHidden:YES];
+		return;
+	}
 
+	LotsaWaterMetalVertex *vertices=(LotsaWaterMetalVertex *)[vertexBuffer contents];
 	int i=0;
 	for(int y=0;y<wet.h;y++)
 	for(int x=0;x<wet.w;x++)
@@ -154,72 +274,60 @@
 		float fx=(float)x/(float)(wet.w-1);
 		float fy=(float)y/(float)(wet.h-1);
 
-		vert[i].x=fx;
-		vert[i].y=fy;
-		col[i].a=255;
+		vertices[i].position=(vector_float2){fx,fy};
+		vertices[i].texCoord=(vector_float2){fx,fy};
+		vertices[i].normal=(vector_float3){0,0,1};
+		vertices[i].intensity=1;
 
 		i++;
 	}
 
-	glClearColor(0,0,0,0);
-	glViewport(0,0,screen_w,screen_h);
+	uint32_t *indices=(uint32_t *)[indexBuffer contents];
+	NSUInteger index=0;
+	for(int y=0;y<wet.h-1;y++)
+	for(int x=0;x<wet.w-1;x++)
+	{
+		uint32_t topLeft=(uint32_t)(y*wet.w+x);
+		uint32_t topRight=topLeft+1;
+		uint32_t bottomLeft=topLeft+(uint32_t)wet.w;
+		uint32_t bottomRight=bottomLeft+1;
+		indices[index++]=topLeft;
+		indices[index++]=bottomLeft;
+		indices[index++]=topRight;
+		indices[index++]=topRight;
+		indices[index++]=bottomLeft;
+		indices[index++]=bottomRight;
+	}
 
-	glActiveTextureARB(GL_TEXTURE0_ARB);
-	glEnable(GL_TEXTURE_RECTANGLE_EXT);
-	glBindTexture(GL_TEXTURE_RECTANGLE_EXT,backtex);
-	glTexEnvf(GL_TEXTURE_ENV,GL_TEXTURE_ENV_MODE,GL_MODULATE);
-	glMatrixMode(GL_TEXTURE);
-	glLoadIdentity();
-	glScalef((float)tex_w,(float)tex_h,1);
-
-	glActiveTextureARB(GL_TEXTURE1_ARB);
-	glEnable(GL_TEXTURE_2D);
-	glBindTexture(GL_TEXTURE_2D,refltex);
-	glTexEnvf(GL_TEXTURE_ENV,GL_TEXTURE_ENV_MODE,GL_ADD);
-	glEnable(GL_TEXTURE_GEN_S);
-	glEnable(GL_TEXTURE_GEN_T);
-	glTexGeni(GL_S,GL_TEXTURE_GEN_MODE,GL_SPHERE_MAP);
-	glTexGeni(GL_T,GL_TEXTURE_GEN_MODE,GL_SPHERE_MAP);
-	glEnable(GL_NORMALIZE);
-
-	glMatrixMode(GL_PROJECTION);
-	glLoadIdentity();
-	glScalef(1/screen_fw,1/screen_fh,-0.001);
-
-	glMatrixMode(GL_MODELVIEW);
-	glLoadIdentity();
-//	glTranslatef(0,0,-5);
-	glTranslatef(-water_w,water_h,-5);
-	glScalef(2*water_w,-2*water_h,10);
-
-//	[self animateOneFrame];
-
-	[NSOpenGLContext clearCurrentContext];
+	animationInitialized=YES;
 }
 
 -(void)stopAnimation
 {
-	[[self openGLContext] makeCurrentContext];
+	// The system can ask a preview instance to stop before it has started,
+	// such as while opening the configuration sheet.  Its buffers are not
+	// valid until startAnimationWithDefaults: has initialized them.
+	if(animationInitialized)
+	{
+		CleanupWater(&wet);
+		animationInitialized=NO;
+	}
 
-	CleanupWater(&wet);
-
-	glDeleteTextures(1,&backtex);
-	glDeleteTextures(1,&refltex);
-
-	free(tex);
-	free(col);
-	free(vert);
-
-	[NSOpenGLContext clearCurrentContext];
+	vertexBuffer=nil;
+	indexBuffer=nil;
+	wallpaperTexture=nil;
+	reflectionTexture=nil;
+	indexCount=0;
+	[metalView setHidden:YES];
 
 	[super stopAnimation];
 }
 
 -(void)animateOneFrame
 {
-	int i;
+	if(!animationInitialized||!pipelineState) return;
 
-	[[self openGLContext] makeCurrentContext];
+	int i;
 
 	double dt=[self deltaTime];
 	t+=dt/t_div;
@@ -245,12 +353,13 @@
 	float fade=[[self defaults] floatForKey:@"imageFade"];
 	if(![self isPreview]&&t<1) fade=1-(1-fade)*(t*t*(3-2*t));
 
+	LotsaWaterMetalVertex *vertices=(LotsaWaterMetalVertex *)[vertexBuffer contents];
 	i=0;
 	for(int y=0;y<wet.h;y++)
 	for(int x=0;x<wet.w;x++)
 	{
-		float u0=vert[i].x;
-		float v0=vert[i].y;
+		float u0=vertices[i].position.x;
+		float v0=vertices[i].position.y;
 
 		float n=1.333f;
 		float col_intensity=3.0f;
@@ -268,59 +377,63 @@
 
 		if(r>0.000001f)
 		{
-			tex[i].u=u0-dx/r*sin_ab*d/water_w;
-			tex[i].v=v0-dy/r*sin_ab*d/water_h;
+			vertices[i].texCoord.x=tex_u0+(u0-dx/r*sin_ab*d/water_w)*tex_uscale;
+			vertices[i].texCoord.y=tex_v0+(v0-dy/r*sin_ab*d/water_h)*tex_vscale;
 		}
 		else
 		{
-			tex[i].u=u0;
-			tex[i].v=v0;
+			vertices[i].texCoord.x=tex_u0+u0*tex_uscale;
+			vertices[i].texCoord.y=tex_v0+v0*tex_vscale;
 		}
+		vertices[i].normal=(vector_float3){wet.n[i].x,wet.n[i].y,wet.n[i].z};
 
 		float c=-(wet.n[i].x+wet.n[i].y)*col_intensity+1.0f;
 		if(c<0.0f) c=0.0f;
 		if(c>1.0f) c=1.0f;
 
-		col[i].r=col[i].g=col[i].b=(int)(c*fade*255.0f);
+		vertices[i].intensity=c*fade;
 
 		i++;
 	}
 
-	glClear(GL_COLOR_BUFFER_BIT);
+	// Never draw synchronously from ScreenSaverView's animation callback.  All
+	// third-party savers share WallpaperLegacyExtension on current macOS; a
+	// synchronous drawable wait here can stall previews and configuration
+	// sheets for every legacy saver.  Let AppKit perform the MTKView draw in its
+	// normal display pass instead.
+	[metalView setNeedsDisplay:YES];
+}
 
-	glShadeModel(GL_SMOOTH);
-	glDisable(GL_BLEND);
+-(void)drawInMTKView:(MTKView *)view
+{
+	if(!animationInitialized||!pipelineState) return;
 
-	glTexCoordPointer(2,GL_FLOAT,sizeof(struct texcoord),tex);
-	glColorPointer(4,GL_UNSIGNED_BYTE,4,col);
-	glNormalPointer(GL_FLOAT,sizeof(vec3_t),wet.n); 
-	glVertexPointer(2,GL_FLOAT,sizeof(struct vertexcoord),vert); 
+	MTLRenderPassDescriptor *passDescriptor=[view currentRenderPassDescriptor];
+	id<CAMetalDrawable> drawable=[view currentDrawable];
+	if(!passDescriptor||!drawable) return;
 
-	glEnableClientState(GL_TEXTURE_COORD_ARRAY);
-	glEnableClientState(GL_COLOR_ARRAY);
-	glEnableClientState(GL_NORMAL_ARRAY);
-	glEnableClientState(GL_VERTEX_ARRAY);
+	LotsaWaterMetalUniforms uniforms={ .waterSize={water_w,water_h} };
+	id<MTLCommandBuffer> commandBuffer=[commandQueue commandBuffer];
+	id<MTLRenderCommandEncoder> encoder=[commandBuffer renderCommandEncoderWithDescriptor:passDescriptor];
+	[encoder setRenderPipelineState:pipelineState];
+	[encoder setVertexBuffer:vertexBuffer offset:0 atIndex:0];
+	[encoder setVertexBytes:&uniforms length:sizeof(uniforms) atIndex:1];
+	[encoder setFragmentTexture:wallpaperTexture atIndex:0];
+	[encoder setFragmentTexture:reflectionTexture atIndex:1];
+	[encoder drawIndexedPrimitives:MTLPrimitiveTypeTriangle
+		indexCount:indexCount
+		indexType:MTLIndexTypeUInt32
+		indexBuffer:indexBuffer
+		indexBufferOffset:0];
+	[encoder endEncoding];
+	[commandBuffer presentDrawable:drawable];
+	[commandBuffer commit];
+}
 
-	glLockArraysEXT(0,wet.w*wet.h);
-
-	i=0;
-	for(int y=0;y<wet.h-1;y++)
-	{
-		glBegin(GL_TRIANGLE_STRIP);
-		for(int x=0;x<wet.w;x++)
-		{
-			glArrayElement(i);
-			glArrayElement(i+wet.w);
-			i++;
-		}
-		glEnd();
-	}
-
-	glUnlockArraysEXT();
-
-	[[self openGLContext] flushBuffer];
-
-	[NSOpenGLContext clearCurrentContext];
+-(void)mtkView:(MTKView *)view drawableSizeWillChange:(CGSize)size
+{
+	// The water mesh is rebuilt when the screen saver starts.  MTKView still
+	// requires this delegate method even though no per-resize work is needed.
 }
 
 -(void)updateConfigWindow:(NSWindow *)window usingDefaults:(ScreenSaverDefaults *)defaults
@@ -331,10 +444,33 @@
 	[rainfall setFloatValue:[defaults floatForKey:@"rainFall"]];
 	[depth setFloatValue:[defaults floatForKey:@"depth"]];
 	[imagefade setFloatValue:[defaults floatForKey:@"imageFade"]];
-	[imgsrc selectItemAtIndex:[defaults integerForKey:@"imageSource"]];
-	[imageview setFileName:[defaults stringForKey:@"imageFileName"]];
 
-	[self pickImageSource:imgsrc];
+	// The background is always the current desktop wallpaper.  Keep the
+	// preview, but remove the obsolete source selector and its "Image:" label.
+	[imgsrc setHidden:YES];
+	[imageview setEditable:NO];
+	NSRect previewFrame=[imageview frame];
+	NSSize previewSize=NSMakeSize(240,150);
+	previewFrame.origin.x+=(NSWidth(previewFrame)-previewSize.width)/2;
+	previewFrame.origin.y+=(NSHeight(previewFrame)-previewSize.height)/2;
+	previewFrame.size=previewSize;
+	[imageview setFrame:previewFrame];
+	NSBundle *bundle=[NSBundle bundleForClass:[self class]];
+	NSString *localizedLabel=[bundle localizedStringForKey:@"106.title" value:@"Image:" table:@"ConfigSheet"];
+	for(NSView *candidate in [[imgsrc superview] subviews])
+	{
+		if([candidate isKindOfClass:[NSTextField class]])
+		{
+			NSString *title=[(NSTextField *)candidate stringValue];
+			if([title isEqualToString:@"Image:"]||[title isEqualToString:localizedLabel])
+				[candidate setHidden:YES];
+		}
+	}
+
+	screenshot=[self grabScreenShot];
+	NSImage *image=[[NSImage alloc] init];
+	[image addRepresentation:screenshot];
+	[imageview setImage:image];
 }
 
 -(void)updateDefaults:(ScreenSaverDefaults *)defaults usingConfigWindow:(NSWindow *)window
@@ -345,8 +481,6 @@
 	[defaults setFloat:[rainfall floatValue] forKey:@"rainFall"];
 	[defaults setFloat:[depth floatValue] forKey:@"depth"];
 	[defaults setFloat:[imagefade floatValue] forKey:@"imageFade"];
-	[defaults setInteger:[imgsrc indexOfSelectedItem] forKey:@"imageSource"];
-	[defaults setObject:[imageview fileName] forKey:@"imageFileName"];
 }
 
 -(IBAction)pickImageSource:(id)sender
@@ -355,6 +489,7 @@
 	{
 		case 0:
 		{
+			screenshot=[self grabScreenShot];
 			NSImage *img=[[NSImage alloc] init];
 			[img addRepresentation:screenshot];
 			[imageview setImage:img];

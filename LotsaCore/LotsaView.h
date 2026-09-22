@@ -1,8 +1,5 @@
 #import <ScreenSaver/ScreenSaver.h>
 
-#import <OpenGL/gl.h>
-#import <OpenGL/glu.h>
-
 #import "NameMangler.h"
 #define LotsaView MangleClassName(LotsaView)
 #define LotsaClockWindow MangleClassName(LotsaClockWindow)
@@ -13,7 +10,6 @@
 @interface LotsaView:ScreenSaverView
 {
 	BOOL ispreview;
-	NSOpenGLView *view;
 	double starttime,prevtime;
 	LotsaClockWindow *clockwin;
 
@@ -23,7 +19,7 @@
 	IBOutlet NSPopUpButton *clockpopup;
 }
 
--(id)initWithFrame:(NSRect)frame isPreview:(BOOL)preview useGL:(BOOL)usegl;
+-(id)initWithFrame:(NSRect)frame isPreview:(BOOL)preview;
 -(void)dealloc;
 -(void)finalize;
 
@@ -46,15 +42,12 @@
 -(IBAction)configCancel:(id)sender;
 -(IBAction)configDefaults:(id)sender;
 
--(NSOpenGLView *)view;
--(NSOpenGLContext *)openGLContext;
 -(BOOL)isPreview;
 
 -(double)absoluteTime;
 -(double)time;
 -(double)deltaTime;
 
--(NSOpenGLPixelFormatAttribute)getScreenMaskForFrame:(NSRect)frame;
 -(NSBitmapImageRep *)grabScreenShot;
 
 -(NSBitmapImageRep *)imageRepFromBundle:(NSString *)name;

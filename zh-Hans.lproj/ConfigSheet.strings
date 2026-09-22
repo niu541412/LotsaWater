@@ -1,0 +1,35 @@
+/* Class = "NSButtonCell"; title = "OK"; ObjectID = "83"; */
+"83.title" = "确定";
+
+/* Class = "NSButtonCell"; title = "Cancel"; ObjectID = "84"; */
+"84.title" = "取消";
+
+/* Class = "NSTextFieldCell"; title = "Detail:"; ObjectID = "86"; */
+"86.title" = "细节：";
+"87.title" = "精度：";
+"88.title" = "高";
+"89.title" = "低";
+"90.title" = "高";
+"91.title" = "低";
+"93.title" = "慢动作：";
+"94.title" = "慢";
+"95.title" = "正常";
+"98.title" = "降雨量：";
+"99.title" = "水深：";
+"100.title" = "倾盆";
+"101.title" = "轻柔";
+"102.title" = "深";
+"103.title" = "浅";
+"105.title" = "壁纸";
+"59.title" = "壁纸";
+"58.title" = "自定义图像";
+"106.title" = "图像：";
+"107.title" = "无";
+"69.title" = "无";
+"71.title" = "小";
+"68.title" = "中";
+"70.title" = "大";
+"109.title" = "暗";
+"110.title" = "正常";
+"111.title" = "变暗：";
+"112.title" = "时钟：";
