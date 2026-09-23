@@ -363,6 +363,7 @@
 		onScreenWindowsOnly:YES completionHandler:^(SCShareableContent *content,NSError *error) {
 		if(!content||error)
 		{
+			NSLog(@"LotsaWater: ScreenCaptureKit could not enumerate content: %@",error);
 			dispatch_semaphore_signal(finished);
 			return;
 		}
@@ -372,6 +373,7 @@
 			if([candidate displayID]==displayID) { display=candidate; break; }
 		if(!display)
 		{
+			NSLog(@"LotsaWater: ScreenCaptureKit did not expose display %u",displayID);
 			dispatch_semaphore_signal(finished);
 			return;
 		}
@@ -395,6 +397,7 @@
 		}
 		if(!wallpaperWindow)
 		{
+			NSLog(@"LotsaWater: ScreenCaptureKit did not expose the Wallpaper window");
 			dispatch_semaphore_signal(finished);
 			return;
 		}
@@ -415,14 +418,40 @@
 			completionHandler:^(CGImageRef image,NSError *captureError) {
 			if(image&&!captureError)
 				captured=[[NSBitmapImageRep alloc] initWithCGImage:image];
+			else
+				NSLog(@"LotsaWater: ScreenCaptureKit wallpaper capture failed: %@",captureError);
 			dispatch_semaphore_signal(finished);
 		}];
 	}];
 
 	// Never let a permission prompt or an unavailable capture service wedge the
-	// screen saver host.  A later fallback can still provide the wallpaper.
-	dispatch_time_t timeout=dispatch_time(DISPATCH_TIME_NOW,3*NSEC_PER_SEC);
-	if(dispatch_semaphore_wait(finished,timeout)!=0) return nil;
+	// screen saver host.  On the main thread, continue pumping the run loop:
+	// ScreenCaptureKit may deliver part of its asynchronous work there.
+	BOOL completed=NO;
+	if([NSThread isMainThread])
+	{
+		NSDate *deadline=[NSDate dateWithTimeIntervalSinceNow:3];
+		while([deadline timeIntervalSinceNow]>0)
+		{
+			if(dispatch_semaphore_wait(finished,DISPATCH_TIME_NOW)==0)
+			{
+				completed=YES;
+				break;
+			}
+			[[NSRunLoop currentRunLoop] runMode:NSDefaultRunLoopMode
+				beforeDate:[NSDate dateWithTimeIntervalSinceNow:0.02]];
+		}
+	}
+	else
+	{
+		dispatch_time_t timeout=dispatch_time(DISPATCH_TIME_NOW,3*NSEC_PER_SEC);
+		completed=dispatch_semaphore_wait(finished,timeout)==0;
+	}
+	if(!completed)
+	{
+		NSLog(@"LotsaWater: ScreenCaptureKit wallpaper capture timed out");
+		return nil;
+	}
 	return captured;
 }
 
