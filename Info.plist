@@ -30,5 +30,7 @@
 	<string>2011 Dag Ågren</string>
 	<key>NSPrincipalClass</key>
 	<string>LWLotsaWaterView</string>
+	<key>NSScreenCaptureUsageDescription</key>
+	<string>LotsaWater captures the desktop wallpaper to render its water effect.</string>
 </dict>
 </plist>

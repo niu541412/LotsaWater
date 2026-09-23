@@ -3,9 +3,11 @@
 #import <sys/time.h>
 #import <CoreGraphics/CoreGraphics.h>
 #import <ImageIO/ImageIO.h>
+#import <ScreenCaptureKit/ScreenCaptureKit.h>
 
 @interface LotsaView ()
 -(void)localizeConfigView:(NSView *)rootView;
+-(NSBitmapImageRep *)captureWallpaperForScreen:(NSScreen *)screen API_AVAILABLE(macos(14.0));
 @end
 
 
@@ -260,13 +262,20 @@
 
 -(NSBitmapImageRep *)grabScreenShot
 {
-	// On recent macOS releases a legacy screen saver runs in an isolated host.
-	// Capturing the windows below the saver then returns the host's gray backing
-	// surface rather than the desktop.  Ask Workspace for the wallpaper file
-	// first; this public API has been available since macOS 10.6 and does not
-	// require Screen Recording permission.
 	NSScreen *targetScreen=[[self window] screen];
 	if(!targetScreen) targetScreen=[NSScreen mainScreen];
+
+	// Capture the composited wallpaper window rather than reopening its source
+	// file.  This preserves the crop and processing selected in System Settings
+	// and also works when the original image is unavailable to the saver host.
+	if(@available(macOS 14.0,*))
+	{
+		NSBitmapImageRep *captured=[self captureWallpaperForScreen:targetScreen];
+		if(captured) return captured;
+	}
+
+	// ScreenCaptureKit needs Screen Recording permission.  Keep the source file
+	// path as a permission-free fallback where Workspace exposes one.
 	NSURL *wallpaperURL=[[NSWorkspace sharedWorkspace] desktopImageURLForScreen:targetScreen];
 	if(wallpaperURL)
 	{
@@ -340,6 +349,81 @@
 	CGImageRelease(image);
     
 	return rep;
+}
+
+-(NSBitmapImageRep *)captureWallpaperForScreen:(NSScreen *)screen
+{
+	NSNumber *screenNumber=[[screen deviceDescription] objectForKey:@"NSScreenNumber"];
+	if(!screenNumber) return nil;
+	CGDirectDisplayID displayID=(CGDirectDisplayID)[screenNumber unsignedIntValue];
+
+	__block NSBitmapImageRep *captured=nil;
+	dispatch_semaphore_t finished=dispatch_semaphore_create(0);
+	[SCShareableContent getShareableContentExcludingDesktopWindows:NO
+		onScreenWindowsOnly:YES completionHandler:^(SCShareableContent *content,NSError *error) {
+		if(!content||error)
+		{
+			dispatch_semaphore_signal(finished);
+			return;
+		}
+
+		SCDisplay *display=nil;
+		for(SCDisplay *candidate in [content displays])
+			if([candidate displayID]==displayID) { display=candidate; break; }
+		if(!display)
+		{
+			dispatch_semaphore_signal(finished);
+			return;
+		}
+
+		SCWindow *wallpaperWindow=nil;
+		CGFloat largestIntersection=0;
+		for(SCWindow *candidate in [content windows])
+		{
+			SCRunningApplication *owner=[candidate owningApplication];
+			if(![[owner bundleIdentifier] isEqualToString:@"com.apple.WindowManager"]||
+				![[candidate title] isEqualToString:@"Wallpaper"])
+				continue;
+			CGRect intersection=CGRectIntersection([candidate frame],[display frame]);
+			CGFloat area=CGRectIsNull(intersection)?0:
+				intersection.size.width*intersection.size.height;
+			if(area>largestIntersection)
+			{
+				largestIntersection=area;
+				wallpaperWindow=candidate;
+			}
+		}
+		if(!wallpaperWindow)
+		{
+			dispatch_semaphore_signal(finished);
+			return;
+		}
+
+		SCContentFilter *filter=[[SCContentFilter alloc]
+			initWithDesktopIndependentWindow:wallpaperWindow];
+		SCStreamConfiguration *configuration=[[SCStreamConfiguration alloc] init];
+		CGFloat scale=MAX(1,[filter pointPixelScale]);
+		CGFloat width=[wallpaperWindow frame].size.width*scale;
+		CGFloat height=[wallpaperWindow frame].size.height*scale;
+		CGFloat downscale=MIN(1,4096/MAX(width,height));
+		[configuration setWidth:MAX(1,(size_t)lrint(width*downscale))];
+		[configuration setHeight:MAX(1,(size_t)lrint(height*downscale))];
+		[configuration setShowsCursor:NO];
+		[configuration setScalesToFit:YES];
+
+		[SCScreenshotManager captureImageWithFilter:filter configuration:configuration
+			completionHandler:^(CGImageRef image,NSError *captureError) {
+			if(image&&!captureError)
+				captured=[[NSBitmapImageRep alloc] initWithCGImage:image];
+			dispatch_semaphore_signal(finished);
+		}];
+	}];
+
+	// Never let a permission prompt or an unavailable capture service wedge the
+	// screen saver host.  A later fallback can still provide the wallpaper.
+	dispatch_time_t timeout=dispatch_time(DISPATCH_TIME_NOW,3*NSEC_PER_SEC);
+	if(dispatch_semaphore_wait(finished,timeout)!=0) return nil;
+	return captured;
 }
 
 -(NSBitmapImageRep *)imageRepFromBundle:(NSString *)name

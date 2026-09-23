@@ -127,8 +127,9 @@
 -(void)startAnimationWithDefaults:(ScreenSaverDefaults *)defaults
 {
 	animationInitialized=NO;
-	// Refresh the current desktop wallpaper for every new run.
-	screenshot=[self grabScreenShot];
+	// drawRect: normally captures the desktop before the saver host covers it.
+	// Do not replace that valid image with a later capture of the host surface.
+	if(!screenshot) screenshot=[self grabScreenShot];
 
 	SeedRandom(time(0));
 
