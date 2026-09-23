@@ -1,8 +1,7 @@
 #import "LotsaCore/LotsaView.h"
 #import "Water.h"
 
-#import <Metal/Metal.h>
-#import <MetalKit/MetalKit.h>
+#import <SpriteKit/SpriteKit.h>
 #import <simd/simd.h>
 
 #import "LotsaCore/NameMangler.h"
@@ -11,38 +10,23 @@
 
 @class ImagePicker;
 
-typedef struct
-{
-	vector_float2 position;
-	vector_float2 texCoord;
-	vector_float3 normal;
-	float intensity;
-} LotsaWaterMetalVertex;
-
-typedef struct
-{
-	vector_float2 waterSize;
-} LotsaWaterMetalUniforms;
-
-@interface LotsaWaterView:LotsaView <MTKViewDelegate>
+@interface LotsaWaterView:LotsaView
 {
 	NSBitmapImageRep *screenshot;
 
-	MTKView *metalView;
-	id<MTLDevice> metalDevice;
-	id<MTLCommandQueue> commandQueue;
-	id<MTLRenderPipelineState> pipelineState;
-	id<MTLTexture> wallpaperTexture;
-	id<MTLTexture> reflectionTexture;
-	id<MTLBuffer> vertexBuffer;
-	id<MTLBuffer> indexBuffer;
-	NSUInteger indexCount;
+	SKView *spriteView;
+	SKScene *scene;
+	SKSpriteNode *waterNode;
+	SKMutableTexture *waterTexture;
+	SKUniform *waterTextureUniform;
+	SKUniform *waterSizeUniform;
+	SKUniform *textureCropUniform;
+	SKUniform *waterDepthUniform;
+	SKUniform *fadeUniform;
 
 	double t,t_next,t_div;
 	double raintime,waterdepth;
 
-	// Portion of the source image used to fill the current screen.
-	float tex_u0,tex_v0,tex_uscale,tex_vscale;
 	float water_w,water_h;
 	BOOL animationInitialized;
 
