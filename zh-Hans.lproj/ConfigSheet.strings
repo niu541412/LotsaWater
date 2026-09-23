@@ -33,3 +33,13 @@
 "110.title" = "正常";
 "111.title" = "变暗：";
 "112.title" = "时钟：";
+
+"ScreenCapture.allow" = "允许截取桌面";
+"ScreenCapture.allowed" = "已允许截取桌面";
+"ScreenCapture.granted.title" = "已允许截取屏幕";
+"ScreenCapture.granted.message" = "请关闭屏保设置并重新打开，然后再测试 LotsaWater。";
+"ScreenCapture.ok" = "确定";
+"ScreenCapture.required.title" = "需要屏幕录制权限";
+"ScreenCapture.required.message" = "请在“隐私与安全性”中允许屏保宿主，然后重新打开屏保设置。";
+"ScreenCapture.openSettings" = "打开隐私设置";
+"ScreenCapture.cancel" = "取消";

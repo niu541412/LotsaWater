@@ -1,3 +1,4 @@
 /* Simplified Chinese localization of Info.plist keys. */
 CFBundleName = "LotsaWater";
 NSHumanReadableCopyright = "无版权，已发布至公共领域";
+NSScreenCaptureUsageDescription = "LotsaWater 需要截取桌面壁纸来生成水波效果。";
