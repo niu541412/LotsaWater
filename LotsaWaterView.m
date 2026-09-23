@@ -73,7 +73,7 @@
 	}
 
 	waterTexture=[[SKMutableTexture alloc] initWithSize:CGSizeMake(1,1)
-		pixelFormat:(int)kCVPixelFormatType_128RGBAFloat];
+		pixelFormat:(int)kCVPixelFormatType_64RGBAHalf];
 	SKTexture *reflection=[SKTexture textureWithCGImage:[[self imageRepFromBundle:@"reflections.png"] CGImage]];
 	[reflection setFilteringMode:SKTextureFilteringLinear];
 
@@ -230,7 +230,7 @@
 	CleanupWaterState(&rnd);*/
 
 	waterTexture=[[SKMutableTexture alloc] initWithSize:CGSizeMake(wet.w,wet.h)
-		pixelFormat:(int)kCVPixelFormatType_128RGBAFloat];
+		pixelFormat:(int)kCVPixelFormatType_64RGBAHalf];
 	[waterTexture setFilteringMode:SKTextureFilteringLinear];
 	[waterTextureUniform setTextureValue:waterTexture];
 	animationInitialized=YES;
@@ -291,17 +291,25 @@
 
 	int width=wet.w;
 	int height=wet.h;
+	NSMutableData *surfaceData=[NSMutableData dataWithLength:
+		(size_t)width*(size_t)height*sizeof(simd_half4)];
+	simd_half4 *surface=(simd_half4 *)[surfaceData mutableBytes];
+	for(int index=0;index<width*height;index++)
+	{
+		surface[index]=(simd_half4){
+			(_Float16)wet.n[index].x,
+			(_Float16)wet.n[index].y,
+			(_Float16)wet.z[index],
+			(_Float16)1
+		};
+	}
+
+	// SpriteKit invokes this block later on an arbitrary queue.  Copy from an
+	// immutable per-frame snapshot instead of reading the water simulation while
+	// the next animation frame is mutating it.
 	[waterTexture modifyPixelDataWithBlock:^(void *pixelData,size_t lengthInBytes) {
-		size_t required=(size_t)width*(size_t)height*4*sizeof(float);
-		if(lengthInBytes<required) return;
-		float *pixels=(float *)pixelData;
-		for(int index=0;index<width*height;index++)
-		{
-			pixels[index*4+0]=wet.n[index].x;
-			pixels[index*4+1]=wet.n[index].y;
-			pixels[index*4+2]=wet.z[index];
-			pixels[index*4+3]=1;
-		}
+		size_t byteCount=MIN(lengthInBytes,[surfaceData length]);
+		memcpy(pixelData,[surfaceData bytes],byteCount);
 	}];
 	[fadeUniform setFloatValue:fade];
 }
