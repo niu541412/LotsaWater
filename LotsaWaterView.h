@@ -17,12 +17,11 @@
 	SKView *spriteView;
 	SKScene *scene;
 	SKSpriteNode *waterNode;
-	SKMutableTexture *waterTexture;
-	SKUniform *waterTextureUniform;
-	SKUniform *waterSizeUniform;
+	SKMutableTexture *refractionTexture;
+	SKMutableTexture *reflectionMapTexture;
+	SKUniform *refractionTextureUniform;
+	SKUniform *reflectionMapTextureUniform;
 	SKUniform *textureCropUniform;
-	SKUniform *waterDepthUniform;
-	SKUniform *fadeUniform;
 
 	double t,t_next,t_div;
 	double raintime,waterdepth;

@@ -19,7 +19,8 @@
 		spriteView=nil;
 		scene=nil;
 		waterNode=nil;
-		waterTexture=nil;
+		refractionTexture=nil;
+		reflectionMapTexture=nil;
 
 		[self setAnimationTimeInterval:1/60.0];
 		[self setConfigName:@"ConfigSheet"];
@@ -72,21 +73,21 @@
 		return NO;
 	}
 
-	waterTexture=[[SKMutableTexture alloc] initWithSize:CGSizeMake(1,1)
+	refractionTexture=[[SKMutableTexture alloc] initWithSize:CGSizeMake(1,1)
 		pixelFormat:(int)kCVPixelFormatType_64RGBAHalf];
+	reflectionMapTexture=[[SKMutableTexture alloc] initWithSize:CGSizeMake(1,1)
+		pixelFormat:(int)kCVPixelFormatType_32RGBA];
 	SKTexture *reflection=[SKTexture textureWithCGImage:[[self imageRepFromBundle:@"reflections.png"] CGImage]];
 	[reflection setFilteringMode:SKTextureFilteringLinear];
 
-	waterTextureUniform=[SKUniform uniformWithName:@"u_water_texture" texture:waterTexture];
+	refractionTextureUniform=[SKUniform uniformWithName:@"u_refraction_texture" texture:refractionTexture];
+	reflectionMapTextureUniform=[SKUniform uniformWithName:@"u_reflection_map_texture" texture:reflectionMapTexture];
 	SKUniform *reflectionUniform=[SKUniform uniformWithName:@"u_reflection_texture" texture:reflection];
-	waterSizeUniform=[SKUniform uniformWithName:@"u_water_size" vectorFloat2:(vector_float2){1,1}];
 	textureCropUniform=[SKUniform uniformWithName:@"u_texture_crop" vectorFloat4:(vector_float4){0,0,1,1}];
-	waterDepthUniform=[SKUniform uniformWithName:@"u_water_depth" float:1];
-	fadeUniform=[SKUniform uniformWithName:@"u_fade" float:1];
 
 	SKShader *shader=[SKShader shaderWithSource:source uniforms:@[
-		waterTextureUniform,reflectionUniform,waterSizeUniform,
-		textureCropUniform,waterDepthUniform,fadeUniform
+		refractionTextureUniform,reflectionMapTextureUniform,
+		reflectionUniform,textureCropUniform
 	]];
 	[waterNode setShader:shader];
 	[spriteView presentScene:scene];
@@ -218,9 +219,7 @@
 	}
 	water_w=screen_fw;
 	water_h=screen_fh;
-	[waterSizeUniform setVectorFloat2Value:(vector_float2){water_w,water_h}];
 	[textureCropUniform setVectorFloat4Value:(vector_float4){tex_u0,tex_v0,tex_uscale,tex_vscale}];
-	[waterDepthUniform setFloatValue:(float)waterdepth];
 
 	InitWater(&wet,gridsize,gridsize,max_p,max_p,1,1,2*water_w,2*water_h);
 
@@ -229,10 +228,14 @@
 	AddWaterStateAtTime(&wet,&rnd,0);
 	CleanupWaterState(&rnd);*/
 
-	waterTexture=[[SKMutableTexture alloc] initWithSize:CGSizeMake(wet.w,wet.h)
+	refractionTexture=[[SKMutableTexture alloc] initWithSize:CGSizeMake(wet.w,wet.h)
 		pixelFormat:(int)kCVPixelFormatType_64RGBAHalf];
-	[waterTexture setFilteringMode:SKTextureFilteringLinear];
-	[waterTextureUniform setTextureValue:waterTexture];
+	reflectionMapTexture=[[SKMutableTexture alloc] initWithSize:CGSizeMake(wet.w,wet.h)
+		pixelFormat:(int)kCVPixelFormatType_32RGBA];
+	[refractionTexture setFilteringMode:SKTextureFilteringLinear];
+	[reflectionMapTexture setFilteringMode:SKTextureFilteringLinear];
+	[refractionTextureUniform setTextureValue:refractionTexture];
+	[reflectionMapTextureUniform setTextureValue:reflectionMapTexture];
 	animationInitialized=YES;
 	[spriteView setHidden:NO];
 	[spriteView setPaused:NO];
@@ -252,8 +255,10 @@
 		animationInitialized=NO;
 	}
 
-	waterTexture=nil;
-	[waterTextureUniform setTextureValue:nil];
+	refractionTexture=nil;
+	reflectionMapTexture=nil;
+	[refractionTextureUniform setTextureValue:nil];
+	[reflectionMapTextureUniform setTextureValue:nil];
 	[waterNode setTexture:nil];
 
 	[super stopAnimation];
@@ -261,7 +266,7 @@
 
 -(void)animateOneFrame
 {
-	if(!animationInitialized||!waterTexture) return;
+	if(!animationInitialized||!refractionTexture||!reflectionMapTexture) return;
 
 	double dt=[self deltaTime];
 	t+=dt/t_div;
@@ -291,27 +296,77 @@
 
 	int width=wet.w;
 	int height=wet.h;
-	NSMutableData *surfaceData=[NSMutableData dataWithLength:
+	NSMutableData *refractionData=[NSMutableData dataWithLength:
 		(size_t)width*(size_t)height*sizeof(simd_half4)];
-	simd_half4 *surface=(simd_half4 *)[surfaceData mutableBytes];
-	for(int index=0;index<width*height;index++)
+	NSMutableData *reflectionMapData=[NSMutableData dataWithLength:
+		(size_t)width*(size_t)height*4];
+	simd_half4 *refraction=(simd_half4 *)[refractionData mutableBytes];
+	uint8_t *reflectionMap=(uint8_t *)[reflectionMapData mutableBytes];
+	for(int y=0;y<height;y++)
+	for(int x=0;x<width;x++)
 	{
-		surface[index]=(simd_half4){
-			(_Float16)wet.n[index].x,
-			(_Float16)wet.n[index].y,
-			(_Float16)wet.z[index],
+		int index=y*width+x;
+		float u=(float)x/(float)(width-1);
+		float v=(float)y/(float)(height-1);
+		float dx=wet.n[index].x;
+		float dy=wet.n[index].y;
+		float slopeLength=hypotf(dx,dy);
+		float wallpaperU=u;
+		float wallpaperV=v;
+		if(slopeLength>0.000001f)
+		{
+			float normalLength=sqrtf(dx*dx+dy*dy+1);
+			float cosA=1/normalLength;
+			float sinA=sqrtf(fmaxf(0,1-cosA*cosA));
+			float sinB=sinA/1.333f;
+			float cosB=sqrtf(fmaxf(0,1-sinB*sinB));
+			float displacement=(sinA*cosB-cosA*sinB)*(wet.z[index]+waterdepth);
+			wallpaperU-=dx/slopeLength*displacement/water_w;
+			wallpaperV-=dy/slopeLength*displacement/water_h;
+		}
+
+		float intensity=fminf(1,fmaxf(0,1-(dx+dy)*3))*fade;
+		// Keep all uploaded colour components positive.  The shader decodes the
+		// refraction coordinates from the -0.5...1.5 range.
+		refraction[index]=(simd_half4){
+			(_Float16)fminf(1,fmaxf(0,(wallpaperU+0.5f)*0.5f)),
+			(_Float16)fminf(1,fmaxf(0,(wallpaperV+0.5f)*0.5f)),
+			(_Float16)intensity,
 			(_Float16)1
 		};
+
+		vector_float3 eyePosition={
+			-water_w+2*water_w*u,
+			 water_h-2*water_h*v,
+			-5
+		};
+		vector_float3 eyeNormal={dx/(2*water_w),-dy/(2*water_h),0.1f};
+		eyePosition=simd_normalize(eyePosition);
+		eyeNormal=simd_normalize(eyeNormal);
+		vector_float3 reflected=simd_reflect(eyePosition,eyeNormal);
+		float denominator=2*sqrtf(reflected.x*reflected.x+reflected.y*reflected.y+
+			(reflected.z+1)*(reflected.z+1));
+		float reflectionU=0.5f;
+		float reflectionV=0.5f;
+		if(denominator>0.000001f)
+		{
+			reflectionU=reflected.x/denominator+0.5f;
+			reflectionV=reflected.y/denominator+0.5f;
+		}
+		reflectionMap[index*4+0]=(uint8_t)lrintf(fminf(1,fmaxf(0,reflectionU))*255);
+		reflectionMap[index*4+1]=(uint8_t)lrintf(fminf(1,fmaxf(0,reflectionV))*255);
+		reflectionMap[index*4+2]=0;
+		reflectionMap[index*4+3]=255;
 	}
 
-	// SpriteKit invokes this block later on an arbitrary queue.  Copy from an
-	// immutable per-frame snapshot instead of reading the water simulation while
-	// the next animation frame is mutating it.
-	[waterTexture modifyPixelDataWithBlock:^(void *pixelData,size_t lengthInBytes) {
-		size_t byteCount=MIN(lengthInBytes,[surfaceData length]);
-		memcpy(pixelData,[surfaceData bytes],byteCount);
+	[refractionTexture modifyPixelDataWithBlock:^(void *pixelData,size_t lengthInBytes) {
+		size_t byteCount=MIN(lengthInBytes,[refractionData length]);
+		memcpy(pixelData,[refractionData bytes],byteCount);
 	}];
-	[fadeUniform setFloatValue:fade];
+	[reflectionMapTexture modifyPixelDataWithBlock:^(void *pixelData,size_t lengthInBytes) {
+		size_t byteCount=MIN(lengthInBytes,[reflectionMapData length]);
+		memcpy(pixelData,[reflectionMapData bytes],byteCount);
+	}];
 }
 
 -(void)updateConfigWindow:(NSWindow *)window usingDefaults:(ScreenSaverDefaults *)defaults
