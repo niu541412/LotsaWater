@@ -8,6 +8,7 @@
 
 /* Begin PBXBuildFile section */
 		E4A000000000000000000001 /* SpriteKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = E4A000000000000000000004 /* SpriteKit.framework */; };
+		E6A000000000000000000001 /* ImageIO.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = E6A000000000000000000002 /* ImageIO.framework */; };
 		E4A000000000000000000003 /* LotsaWater.fsh in Resources */ = {isa = PBXBuildFile; fileRef = E4A000000000000000000006 /* LotsaWater.fsh */; };
 		E5A000000000000000000001 /* LotsaWaterShade.fsh in Resources */ = {isa = PBXBuildFile; fileRef = E5A000000000000000000002 /* LotsaWaterShade.fsh */; };
 		1B0BFC92091EC98F0012580D /* Water.h in Headers */ = {isa = PBXBuildFile; fileRef = 1B0BFC90091EC98F0012580D /* Water.h */; };
@@ -40,6 +41,7 @@
 		06F27B2DFFEEEFEF11CA0E56 /* ScreenSaver.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = ScreenSaver.framework; path = /System/Library/Frameworks/ScreenSaver.framework; sourceTree = "<absolute>"; };
 		1058C7ADFEA557BF11CA2CBB /* Cocoa.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Cocoa.framework; path = /System/Library/Frameworks/Cocoa.framework; sourceTree = "<absolute>"; };
 		E4A000000000000000000004 /* SpriteKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = SpriteKit.framework; path = /System/Library/Frameworks/SpriteKit.framework; sourceTree = "<absolute>"; };
+		E6A000000000000000000002 /* ImageIO.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = ImageIO.framework; path = /System/Library/Frameworks/ImageIO.framework; sourceTree = "<absolute>"; };
 		E4A000000000000000000006 /* LotsaWater.fsh */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text; path = LotsaWater.fsh; sourceTree = "<group>"; };
 		E5A000000000000000000002 /* LotsaWaterShade.fsh */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text; path = LotsaWaterShade.fsh; sourceTree = "<group>"; };
 		1B0BFC90091EC98F0012580D /* Water.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = Water.h; sourceTree = "<group>"; };
@@ -77,6 +79,7 @@
 				8D255ACE0486D3F9007BF209 /* Cocoa.framework in Frameworks */,
 				8D255ACF0486D3F9007BF209 /* ScreenSaver.framework in Frameworks */,
 				E4A000000000000000000001 /* SpriteKit.framework in Frameworks */,
+				E6A000000000000000000001 /* ImageIO.framework in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -98,6 +101,7 @@
 		089C1671FE841209C02AAC07 /* Frameworks and Libraries */ = {
 			isa = PBXGroup;
 			children = (
+				E6A000000000000000000002 /* ImageIO.framework */,
 				E4A000000000000000000004 /* SpriteKit.framework */,
 				1058C7ADFEA557BF11CA2CBB /* Cocoa.framework */,
 				06F27B2DFFEEEFEF11CA0E56 /* ScreenSaver.framework */,

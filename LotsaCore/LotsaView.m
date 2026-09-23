@@ -2,6 +2,7 @@
 
 #import <sys/time.h>
 #import <CoreGraphics/CoreGraphics.h>
+#import <ImageIO/ImageIO.h>
 
 @interface LotsaView ()
 -(void)localizeConfigView:(NSView *)rootView;
@@ -270,7 +271,34 @@
 	if(wallpaperURL)
 	{
 		NSData *wallpaperData=[NSData dataWithContentsOfURL:wallpaperURL];
-		NSBitmapImageRep *wallpaper=[NSBitmapImageRep imageRepWithData:wallpaperData];
+		NSBitmapImageRep *wallpaper=nil;
+		CGImageSourceRef source=wallpaperData?CGImageSourceCreateWithData(
+			(__bridge CFDataRef)wallpaperData,NULL):NULL;
+		if(source)
+		{
+			NSDictionary *properties=CFBridgingRelease(
+				CGImageSourceCopyPropertiesAtIndex(source,0,NULL));
+			NSInteger width=[[properties objectForKey:(id)kCGImagePropertyPixelWidth] integerValue];
+			NSInteger height=[[properties objectForKey:(id)kCGImagePropertyPixelHeight] integerValue];
+			if(MAX(width,height)>4096)
+			{
+				NSDictionary *options=@{
+					(id)kCGImageSourceCreateThumbnailFromImageAlways:@YES,
+					(id)kCGImageSourceCreateThumbnailWithTransform:@YES,
+					(id)kCGImageSourceThumbnailMaxPixelSize:@4096
+				};
+				CGImageRef image=CGImageSourceCreateThumbnailAtIndex(source,0,
+					(__bridge CFDictionaryRef)options);
+				if(image)
+				{
+					wallpaper=[[NSBitmapImageRep alloc] initWithCGImage:image];
+					CGImageRelease(image);
+				}
+			}
+			CFRelease(source);
+		}
+		if(!wallpaper)
+			wallpaper=[NSBitmapImageRep imageRepWithData:wallpaperData];
 		if(wallpaper) return wallpaper;
 	}
 
