@@ -7,9 +7,6 @@
 
 @interface LotsaView ()
 -(void)localizeConfigView:(NSView *)rootView;
--(void)addScreenCaptureButtonToView:(NSView *)contentView;
--(void)updateScreenCaptureButton;
--(IBAction)requestScreenCaptureAccess:(id)sender;
 -(NSBitmapImageRep *)captureWallpaperForScreen:(NSScreen *)screen API_AVAILABLE(macos(14.0));
 @end
 
@@ -101,76 +98,8 @@
 	[self updateConfigWindow:configwindow usingDefaults:defaults];
 	[clockpopup selectItemAtIndex:[[self defaults] integerForKey:@"clockSize"]];
 	[self localizeConfigView:[configwindow contentView]];
-	[self addScreenCaptureButtonToView:[configwindow contentView]];
-	[self updateScreenCaptureButton];
 
 	return configwindow;
-}
-
--(void)addScreenCaptureButtonToView:(NSView *)contentView
-{
-	if([contentView viewWithTag:541412]) return;
-	NSBundle *bundle=[NSBundle bundleForClass:[self class]];
-	NSString *title=[bundle localizedStringForKey:@"ScreenCapture.allow"
-		value:@"Allow Desktop Capture" table:@"ConfigSheet"];
-	NSButton *button=[NSButton buttonWithTitle:title target:self
-		action:@selector(requestScreenCaptureAccess:)];
-	[button setTag:541412];
-	[button setBezelStyle:NSBezelStyleRounded];
-	[button setFrame:NSMakeRect(362,84,195,28)];
-	[button setAutoresizingMask:NSViewMinXMargin|NSViewMaxYMargin];
-	[contentView addSubview:button];
-}
-
--(void)updateScreenCaptureButton
-{
-	NSButton *button=(NSButton *)[[configwindow contentView] viewWithTag:541412];
-	if(!button) return;
-	BOOL allowed=CGPreflightScreenCaptureAccess();
-	NSBundle *bundle=[NSBundle bundleForClass:[self class]];
-	[button setTitle:[bundle localizedStringForKey:
-		allowed?@"ScreenCapture.allowed":@"ScreenCapture.allow"
-		value:allowed?@"Desktop Capture Allowed":@"Allow Desktop Capture"
-		table:@"ConfigSheet"]];
-	[button setEnabled:!allowed];
-}
-
--(IBAction)requestScreenCaptureAccess:(id)sender
-{
-	BOOL allowed=CGPreflightScreenCaptureAccess()||CGRequestScreenCaptureAccess();
-	[self updateScreenCaptureButton];
-	NSBundle *bundle=[NSBundle bundleForClass:[self class]];
-	NSAlert *alert=[[NSAlert alloc] init];
-	if(allowed)
-	{
-		[alert setMessageText:[bundle localizedStringForKey:@"ScreenCapture.granted.title"
-			value:@"Screen capture is allowed" table:@"ConfigSheet"]];
-		[alert setInformativeText:[bundle localizedStringForKey:@"ScreenCapture.granted.message"
-			value:@"Close Screen Saver settings and reopen it before testing LotsaWater."
-			table:@"ConfigSheet"]];
-		[alert addButtonWithTitle:[bundle localizedStringForKey:@"ScreenCapture.ok"
-			value:@"OK" table:@"ConfigSheet"]];
-		[alert beginSheetModalForWindow:configwindow completionHandler:nil];
-		return;
-	}
-
-	[alert setMessageText:[bundle localizedStringForKey:@"ScreenCapture.required.title"
-		value:@"Screen capture permission is required" table:@"ConfigSheet"]];
-	[alert setInformativeText:[bundle localizedStringForKey:@"ScreenCapture.required.message"
-		value:@"Enable the screen saver host in Privacy & Security, then reopen Screen Saver settings."
-		table:@"ConfigSheet"]];
-	[alert addButtonWithTitle:[bundle localizedStringForKey:@"ScreenCapture.openSettings"
-		value:@"Open Privacy Settings" table:@"ConfigSheet"]];
-	[alert addButtonWithTitle:[bundle localizedStringForKey:@"ScreenCapture.cancel"
-		value:@"Cancel" table:@"ConfigSheet"]];
-	[alert beginSheetModalForWindow:configwindow completionHandler:^(NSModalResponse response) {
-		if(response==NSAlertFirstButtonReturn)
-		{
-			NSURL *url=[NSURL URLWithString:
-				@"x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture"];
-			[[NSWorkspace sharedWorkspace] openURL:url];
-		}
-	}];
 }
 
 -(void)localizeConfigView:(NSView *)rootView
