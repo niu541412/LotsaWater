@@ -176,9 +176,16 @@
 		[spriteView setPaused:YES];
 		return;
 	}
-	SKTexture *wallpaperTexture=[SKTexture textureWithCGImage:wallpaperImage];
-	[wallpaperTexture setFilteringMode:SKTextureFilteringLinear];
-	[waterNode setTexture:wallpaperTexture];
+	// Rebinding SpriteKit textures after a preview stop/start can leave the
+	// shader sampling the retired texture in the legacy screen saver host.
+	// The wallpaper image is retained for the lifetime of this view, so keep
+	// the first successfully uploaded texture as well.
+	if(![waterNode texture])
+	{
+		SKTexture *wallpaperTexture=[SKTexture textureWithCGImage:wallpaperImage];
+		[wallpaperTexture setFilteringMode:SKTextureFilteringLinear];
+		[waterNode setTexture:wallpaperTexture];
+	}
 
 	int tex_w=(int)CGImageGetWidth(wallpaperImage);
 	int tex_h=(int)CGImageGetHeight(wallpaperImage);
@@ -225,10 +232,14 @@
 	AddWaterStateAtTime(&wet,&rnd,0);
 	CleanupWaterState(&rnd);*/
 
-	surfaceTexture=[[SKMutableTexture alloc] initWithSize:CGSizeMake(wet.w,wet.h)
-		pixelFormat:(int)kCVPixelFormatType_32RGBA];
-	[surfaceTexture setFilteringMode:SKTextureFilteringLinear];
-	[surfaceTextureUniform setTextureValue:surfaceTexture];
+	CGSize surfaceSize=[surfaceTexture size];
+	if((int)lrint(surfaceSize.width)!=wet.w||(int)lrint(surfaceSize.height)!=wet.h)
+	{
+		surfaceTexture=[[SKMutableTexture alloc] initWithSize:CGSizeMake(wet.w,wet.h)
+			pixelFormat:(int)kCVPixelFormatType_32RGBA];
+		[surfaceTexture setFilteringMode:SKTextureFilteringLinear];
+		[surfaceTextureUniform setTextureValue:surfaceTexture];
+	}
 	[waterSizeUniform setVectorFloat2Value:(vector_float2){water_w,water_h}];
 	[textureCropUniform setVectorFloat4Value:(vector_float4){tex_u0,tex_v0,tex_uscale,tex_vscale}];
 	[waterDepthUniform setFloatValue:(float)waterdepth];
