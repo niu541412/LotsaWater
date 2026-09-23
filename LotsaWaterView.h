@@ -17,15 +17,16 @@
 	SKView *spriteView;
 	SKScene *scene;
 	SKSpriteNode *waterNode;
-	SKMutableTexture *refractionTexture;
-	SKMutableTexture *reflectionMapTexture;
-	SKUniform *refractionTextureUniform;
-	SKUniform *reflectionMapTextureUniform;
-	SKUniform *textureCropUniform;
+	SKSpriteNode *shadeNode;
+	SKSpriteNode *reflectionNode;
+	SKMutableTexture *surfaceTexture;
+	SKUniform *shadeSurfaceUniform;
+	SKUniform *reflectionSurfaceUniform;
 
 	double t,t_next,t_div;
 	double raintime,waterdepth;
 
+	float tex_u0,tex_v0,tex_uscale,tex_vscale;
 	float water_w,water_h;
 	BOOL animationInitialized;
 

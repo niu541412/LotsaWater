@@ -9,6 +9,7 @@
 /* Begin PBXBuildFile section */
 		E4A000000000000000000001 /* SpriteKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = E4A000000000000000000004 /* SpriteKit.framework */; };
 		E4A000000000000000000003 /* LotsaWater.fsh in Resources */ = {isa = PBXBuildFile; fileRef = E4A000000000000000000006 /* LotsaWater.fsh */; };
+		E5A000000000000000000001 /* LotsaWaterShade.fsh in Resources */ = {isa = PBXBuildFile; fileRef = E5A000000000000000000002 /* LotsaWaterShade.fsh */; };
 		1B0BFC92091EC98F0012580D /* Water.h in Headers */ = {isa = PBXBuildFile; fileRef = 1B0BFC90091EC98F0012580D /* Water.h */; };
 		1B0BFC93091EC98F0012580D /* Water.c in Sources */ = {isa = PBXBuildFile; fileRef = 1B0BFC91091EC98F0012580D /* Water.c */; settings = {COMPILER_FLAGS = "-fast -fPIC"; }; };
 		1B0BFFD9092039AF0012580D /* reflections.png in Resources */ = {isa = PBXBuildFile; fileRef = 1B0BFFD8092039AF0012580D /* reflections.png */; };
@@ -40,6 +41,7 @@
 		1058C7ADFEA557BF11CA2CBB /* Cocoa.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Cocoa.framework; path = /System/Library/Frameworks/Cocoa.framework; sourceTree = "<absolute>"; };
 		E4A000000000000000000004 /* SpriteKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = SpriteKit.framework; path = /System/Library/Frameworks/SpriteKit.framework; sourceTree = "<absolute>"; };
 		E4A000000000000000000006 /* LotsaWater.fsh */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text; path = LotsaWater.fsh; sourceTree = "<group>"; };
+		E5A000000000000000000002 /* LotsaWaterShade.fsh */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text; path = LotsaWaterShade.fsh; sourceTree = "<group>"; };
 		1B0BFC90091EC98F0012580D /* Water.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = Water.h; sourceTree = "<group>"; };
 		1B0BFC91091EC98F0012580D /* Water.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; path = Water.c; sourceTree = "<group>"; };
 		1B0BFFD8092039AF0012580D /* reflections.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = reflections.png; sourceTree = "<group>"; };
@@ -108,6 +110,7 @@
 			children = (
 				1B0BFFD8092039AF0012580D /* reflections.png */,
 				E4A000000000000000000006 /* LotsaWater.fsh */,
+				E5A000000000000000000002 /* LotsaWaterShade.fsh */,
 				E3A000000000000000000003 /* thumbnail.png */,
 				E3A000000000000000000004 /* thumbnail@2x.png */,
 				1B1B992F0B07C18F00EC8324 /* ConfigSheet.nib */,
@@ -252,6 +255,7 @@
 				8D255ACA0486D3F9007BF209 /* InfoPlist.strings in Resources */,
 				1B0BFFD9092039AF0012580D /* reflections.png in Resources */,
 				E4A000000000000000000003 /* LotsaWater.fsh in Resources */,
+				E5A000000000000000000001 /* LotsaWaterShade.fsh in Resources */,
 				E3A000000000000000000001 /* thumbnail.png in Resources */,
 				E3A000000000000000000002 /* thumbnail@2x.png in Resources */,
 				1B1B99300B07C18F00EC8324 /* ConfigSheet.nib in Resources */,
