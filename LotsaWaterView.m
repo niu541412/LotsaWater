@@ -48,7 +48,6 @@
 	[spriteView setAllowsTransparency:NO];
 	[spriteView setDisableDepthStencilBuffer:YES];
 	[spriteView setPaused:YES];
-	[spriteView setHidden:YES];
 	[self setAutoresizesSubviews:YES];
 	[self addSubview:spriteView];
 
@@ -167,14 +166,14 @@
 
 	if(!waterNode||!screenshot)
 	{
-		[spriteView setHidden:YES];
+		[spriteView setPaused:YES];
 		return;
 	}
 
 	CGImageRef wallpaperImage=[screenshot CGImage];
 	if(!wallpaperImage)
 	{
-		[spriteView setHidden:YES];
+		[spriteView setPaused:YES];
 		return;
 	}
 	SKTexture *wallpaperTexture=[SKTexture textureWithCGImage:wallpaperImage];
@@ -234,14 +233,12 @@
 	[textureCropUniform setVectorFloat4Value:(vector_float4){tex_u0,tex_v0,tex_uscale,tex_vscale}];
 	[waterDepthUniform setFloatValue:(float)waterdepth];
 	animationInitialized=YES;
-	[spriteView setHidden:NO];
 	[spriteView setPaused:NO];
 }
 
 -(void)stopAnimation
 {
 	[spriteView setPaused:YES];
-	[spriteView setHidden:YES];
 
 	// The system can ask a preview instance to stop before it has started,
 	// such as while opening the configuration sheet.  Its buffers are not
@@ -251,10 +248,6 @@
 		CleanupWater(&wet);
 		animationInitialized=NO;
 	}
-
-	surfaceTexture=nil;
-	[surfaceTextureUniform setTextureValue:nil];
-	[waterNode setTexture:nil];
 
 	[super stopAnimation];
 }
