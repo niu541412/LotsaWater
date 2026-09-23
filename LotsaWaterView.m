@@ -19,8 +19,6 @@
 		spriteView=nil;
 		scene=nil;
 		waterNode=nil;
-		shadeNode=nil;
-		reflectionNode=nil;
 		surfaceTexture=nil;
 
 		[self setAnimationTimeInterval:1/60.0];
@@ -66,13 +64,10 @@
 
 	NSError *error=nil;
 	NSBundle *bundle=[NSBundle bundleForClass:[self class]];
-	NSURL *shadeShaderURL=[bundle URLForResource:@"LotsaWaterShade" withExtension:@"fsh"];
-	NSString *shadeSource=shadeShaderURL?[NSString stringWithContentsOfURL:shadeShaderURL
+	NSURL *shaderURL=[bundle URLForResource:@"LotsaWater" withExtension:@"fsh"];
+	NSString *shaderSource=shaderURL?[NSString stringWithContentsOfURL:shaderURL
 		encoding:NSUTF8StringEncoding error:&error]:nil;
-	NSURL *reflectionShaderURL=[bundle URLForResource:@"LotsaWater" withExtension:@"fsh"];
-	NSString *reflectionSource=reflectionShaderURL?[NSString stringWithContentsOfURL:reflectionShaderURL
-		encoding:NSUTF8StringEncoding error:&error]:nil;
-	if(!shadeSource||!reflectionSource)
+	if(!shaderSource)
 	{
 		NSLog(@"LotsaWater: unable to load SpriteKit shader: %@",error);
 		return NO;
@@ -83,24 +78,15 @@
 	SKTexture *reflection=[SKTexture textureWithCGImage:[[self imageRepFromBundle:@"reflections.png"] CGImage]];
 	[reflection setFilteringMode:SKTextureFilteringLinear];
 
-	shadeSurfaceUniform=[SKUniform uniformWithName:@"u_surface_texture" texture:surfaceTexture];
-	reflectionSurfaceUniform=[SKUniform uniformWithName:@"u_surface_texture" texture:surfaceTexture];
+	surfaceTextureUniform=[SKUniform uniformWithName:@"u_surface_texture" texture:surfaceTexture];
 	SKUniform *reflectionUniform=[SKUniform uniformWithName:@"u_reflection_texture" texture:reflection];
-
-	shadeNode=[SKSpriteNode spriteNodeWithColor:[NSColor whiteColor] size:[self bounds].size];
-	[shadeNode setAnchorPoint:CGPointMake(0.5,0.5)];
-	[shadeNode setBlendMode:SKBlendModeMultiply];
-	[shadeNode setZPosition:1];
-	[shadeNode setShader:[SKShader shaderWithSource:shadeSource uniforms:@[shadeSurfaceUniform]]];
-	[scene addChild:shadeNode];
-
-	reflectionNode=[SKSpriteNode spriteNodeWithColor:[NSColor whiteColor] size:[self bounds].size];
-	[reflectionNode setAnchorPoint:CGPointMake(0.5,0.5)];
-	[reflectionNode setBlendMode:SKBlendModeAdd];
-	[reflectionNode setZPosition:2];
-	[reflectionNode setShader:[SKShader shaderWithSource:reflectionSource
-		uniforms:@[reflectionSurfaceUniform,reflectionUniform]]];
-	[scene addChild:reflectionNode];
+	waterSizeUniform=[SKUniform uniformWithName:@"u_water_size" vectorFloat2:(vector_float2){1,1}];
+	textureCropUniform=[SKUniform uniformWithName:@"u_texture_crop" vectorFloat4:(vector_float4){0,0,1,1}];
+	waterDepthUniform=[SKUniform uniformWithName:@"u_water_depth" float:1];
+	fadeUniform=[SKUniform uniformWithName:@"u_fade" float:1];
+	[waterNode setShader:[SKShader shaderWithSource:shaderSource uniforms:@[
+		surfaceTextureUniform,reflectionUniform,waterSizeUniform,textureCropUniform,
+		waterDepthUniform,fadeUniform]]];
 
 	[spriteView presentScene:scene];
 	[self updateSceneLayout];
@@ -112,11 +98,8 @@
 	NSSize size=[self bounds].size;
 	if(size.width<=0||size.height<=0) return;
 	[scene setSize:size];
-	for(SKSpriteNode *node in @[waterNode,shadeNode,reflectionNode])
-	{
-		[node setSize:size];
-		[node setPosition:CGPointMake(size.width/2,size.height/2)];
-	}
+	[waterNode setSize:size];
+	[waterNode setPosition:CGPointMake(size.width/2,size.height/2)];
 }
 
 -(void)layout
@@ -245,8 +228,10 @@
 	surfaceTexture=[[SKMutableTexture alloc] initWithSize:CGSizeMake(wet.w,wet.h)
 		pixelFormat:(int)kCVPixelFormatType_32RGBA];
 	[surfaceTexture setFilteringMode:SKTextureFilteringLinear];
-	[shadeSurfaceUniform setTextureValue:surfaceTexture];
-	[reflectionSurfaceUniform setTextureValue:surfaceTexture];
+	[surfaceTextureUniform setTextureValue:surfaceTexture];
+	[waterSizeUniform setVectorFloat2Value:(vector_float2){water_w,water_h}];
+	[textureCropUniform setVectorFloat4Value:(vector_float4){tex_u0,tex_v0,tex_uscale,tex_vscale}];
+	[waterDepthUniform setFloatValue:(float)waterdepth];
 	animationInitialized=YES;
 	[spriteView setHidden:NO];
 	[spriteView setPaused:NO];
@@ -267,10 +252,8 @@
 	}
 
 	surfaceTexture=nil;
-	[shadeSurfaceUniform setTextureValue:nil];
-	[reflectionSurfaceUniform setTextureValue:nil];
+	[surfaceTextureUniform setTextureValue:nil];
 	[waterNode setTexture:nil];
-	[waterNode setWarpGeometry:nil];
 
 	[super stopAnimation];
 }
@@ -307,78 +290,22 @@
 
 	int width=wet.w;
 	int height=wet.h;
-	NSUInteger vertexCount=(NSUInteger)width*(NSUInteger)height;
-	NSMutableData *sourcePositionData=[NSMutableData dataWithLength:
-		vertexCount*sizeof(vector_float2)];
-	NSMutableData *destPositionData=[NSMutableData dataWithLength:
-		vertexCount*sizeof(vector_float2)];
 	NSMutableData *surfaceData=[NSMutableData dataWithLength:
 		(size_t)width*(size_t)height*4];
-	vector_float2 *sourcePositions=(vector_float2 *)[sourcePositionData mutableBytes];
-	vector_float2 *destPositions=(vector_float2 *)[destPositionData mutableBytes];
 	uint8_t *surface=(uint8_t *)[surfaceData mutableBytes];
 	for(int y=0;y<height;y++)
 	for(int x=0;x<width;x++)
 	{
 		int index=y*width+x;
-		float u=(float)x/(float)(width-1);
-		float v=(float)y/(float)(height-1);
 		float dx=wet.n[index].x;
 		float dy=wet.n[index].y;
-		float slopeLength=hypotf(dx,dy);
-		float wallpaperU=u;
-		float wallpaperV=v;
-		if(slopeLength>0.000001f)
-		{
-			float normalLength=sqrtf(dx*dx+dy*dy+1);
-			float cosA=1/normalLength;
-			float sinA=sqrtf(fmaxf(0,1-cosA*cosA));
-			float sinB=sinA/1.333f;
-			float cosB=sqrtf(fmaxf(0,1-sinB*sinB));
-			float displacement=(sinA*cosB-cosA*sinB)*(wet.z[index]+waterdepth);
-			wallpaperU-=dx/slopeLength*displacement/water_w;
-			wallpaperV-=dy/slopeLength*displacement/water_h;
-		}
-
-		float intensity=fminf(1,fmaxf(0,1-(dx+dy)*3))*fade;
-
-		// SKWarpGeometryGrid is ordered from the bottom-left, while Water's first
-		// row represents the top of the screen.
-		int warpIndex=(height-1-y)*width+x;
-		sourcePositions[warpIndex]=(vector_float2){
-			fminf(1,fmaxf(0,tex_u0+wallpaperU*tex_uscale)),
-			fminf(1,fmaxf(0,1-(tex_v0+wallpaperV*tex_vscale)))
-		};
-		destPositions[warpIndex]=(vector_float2){u,1-v};
-
-		vector_float3 eyePosition={
-			-water_w+2*water_w*u,
-			 water_h-2*water_h*v,
-			-5
-		};
-		vector_float3 eyeNormal={dx/(2*water_w),-dy/(2*water_h),0.1f};
-		eyePosition=simd_normalize(eyePosition);
-		eyeNormal=simd_normalize(eyeNormal);
-		vector_float3 reflected=simd_reflect(eyePosition,eyeNormal);
-		float denominator=2*sqrtf(reflected.x*reflected.x+reflected.y*reflected.y+
-			(reflected.z+1)*(reflected.z+1));
-		float reflectionU=0.5f;
-		float reflectionV=0.5f;
-		if(denominator>0.000001f)
-		{
-			reflectionU=reflected.x/denominator+0.5f;
-			reflectionV=reflected.y/denominator+0.5f;
-		}
-		surface[index*4+0]=(uint8_t)lrintf(fminf(1,fmaxf(0,reflectionU))*255);
-		surface[index*4+1]=(uint8_t)lrintf(fminf(1,fmaxf(0,reflectionV))*255);
-		surface[index*4+2]=(uint8_t)lrintf(intensity*255);
+		float z=wet.z[index];
+		surface[index*4+0]=(uint8_t)lrintf(fminf(1,fmaxf(0,dx+0.5f))*255);
+		surface[index*4+1]=(uint8_t)lrintf(fminf(1,fmaxf(0,dy+0.5f))*255);
+		surface[index*4+2]=(uint8_t)lrintf(fminf(1,fmaxf(0,z*4+0.5f))*255);
 		surface[index*4+3]=255;
 	}
-
-	SKWarpGeometryGrid *warp=[SKWarpGeometryGrid
-		gridWithColumns:width-1 rows:height-1
-		sourcePositions:sourcePositions destPositions:destPositions];
-	[waterNode setWarpGeometry:warp];
+	[fadeUniform setFloatValue:fade];
 
 	[surfaceTexture modifyPixelDataWithBlock:^(void *pixelData,size_t lengthInBytes) {
 		size_t byteCount=MIN(lengthInBytes,[surfaceData length]);
