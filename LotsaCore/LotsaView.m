@@ -4,6 +4,7 @@
 
 @interface LotsaView ()
 -(void)localizeConfigView:(NSView *)rootView;
+-(void)dismissConfigWindow;
 @end
 
 
@@ -191,12 +192,24 @@
 
 	[defaults synchronize];
 
-	[[NSApplication sharedApplication] endSheet:configwindow];
+	[self dismissConfigWindow];
 }
 
 -(IBAction)configCancel:(id)sender
 {
-	[[NSApplication sharedApplication] endSheet:configwindow];
+	[self dismissConfigWindow];
+}
+
+-(void)dismissConfigWindow
+{
+	NSWindow *window=configwindow;
+	if(!window) return;
+	[[NSApplication sharedApplication] endSheet:window];
+	[window orderOut:self];
+	// System Settings hosts legacy saver sheets remotely.  A window that has
+	// already completed one remote sheet session is not reliably attachable a
+	// second time, so let configureSheet load a fresh instance on the next click.
+	configwindow=nil;
 }
 
 -(IBAction)configDefaults:(id)sender
