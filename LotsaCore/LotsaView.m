@@ -1,9 +1,11 @@
 #import "LotsaView.h"
 
 #import <sys/time.h>
+#import <CommonCrypto/CommonDigest.h>
 
 @interface LotsaView ()
 -(void)localizeConfigView:(NSView *)rootView;
+-(NSBitmapImageRep *)cachedWallpaperForURL:(NSURL *)wallpaperURL screen:(NSScreen *)screen;
 @end
 
 
@@ -261,11 +263,16 @@
 	NSScreen *targetScreen=[[self window] screen];
 	if(!targetScreen) targetScreen=[NSScreen mainScreen];
 
-	// Recent screen saver hosts cannot capture the desktop without a separate
-	// authorized application.  Use the wallpaper file exposed by Workspace.
+	// Workspace keeps returning the configured URL even after the source image
+	// has been removed.  Prefer WallpaperAgent's decoded cache in that case (and
+	// avoid depending on access to the original file), then fall back to the
+	// public source URL when the private cache is unavailable.
 	NSURL *wallpaperURL=[[NSWorkspace sharedWorkspace] desktopImageURLForScreen:targetScreen];
 	if(wallpaperURL)
 	{
+		NSBitmapImageRep *cached=[self cachedWallpaperForURL:wallpaperURL screen:targetScreen];
+		if(cached) return cached;
+
 		NSData *wallpaperData=[NSData dataWithContentsOfURL:wallpaperURL];
 		NSBitmapImageRep *wallpaper=wallpaperData?
 			[NSBitmapImageRep imageRepWithData:wallpaperData]:nil;
@@ -273,6 +280,59 @@
 	}
 
 	return nil;
+}
+
+-(NSBitmapImageRep *)cachedWallpaperForURL:(NSURL *)wallpaperURL screen:(NSScreen *)screen
+{
+	NSString *sourcePath=[wallpaperURL path];
+	NSData *pathData=[sourcePath dataUsingEncoding:NSUTF8StringEncoding];
+	if(!pathData) return nil;
+
+	unsigned char digest[CC_SHA256_DIGEST_LENGTH];
+	CC_SHA256([pathData bytes],(CC_LONG)[pathData length],digest);
+	NSMutableString *hash=[NSMutableString stringWithCapacity:CC_SHA256_DIGEST_LENGTH*2];
+	for(NSUInteger index=0;index<CC_SHA256_DIGEST_LENGTH;index++)
+		[hash appendFormat:@"%02x",digest[index]];
+
+	NSString *cacheDirectory=[NSHomeDirectory() stringByAppendingPathComponent:
+		@"Library/Containers/com.apple.wallpaper.agent/Data/Library/Caches/"
+		 @"com.apple.wallpaper.caches/extension-com.apple.wallpaper.extension.image"];
+	NSArray<NSString *> *entries=[[NSFileManager defaultManager]
+		contentsOfDirectoryAtPath:cacheDirectory error:nil];
+	if(!entries) return nil;
+
+	CGFloat scale=[screen backingScaleFactor];
+	NSInteger pixelWidth=(NSInteger)lrint(NSWidth([screen frame])*scale);
+	NSInteger pixelHeight=(NSInteger)lrint(NSHeight([screen frame])*scale);
+	NSString *hashPrefix=[hash stringByAppendingString:@"-"];
+	NSString *displayPrefix=[NSString stringWithFormat:@"%@%ld-%ld-",hashPrefix,
+		(long)pixelWidth,(long)pixelHeight];
+	NSString *bestExact=nil,*bestFallback=nil;
+	NSDate *bestExactDate=nil,*bestFallbackDate=nil;
+
+	for(NSString *entry in entries)
+	{
+		if(![entry hasPrefix:hashPrefix]||![[entry pathExtension] isEqualToString:@"bmp"])
+			continue;
+		NSString *path=[cacheDirectory stringByAppendingPathComponent:entry];
+		NSDate *date=[[[NSFileManager defaultManager] attributesOfItemAtPath:path error:nil]
+			objectForKey:NSFileModificationDate];
+		if(!bestFallbackDate||[date compare:bestFallbackDate]==NSOrderedDescending)
+		{
+			bestFallback=path;
+			bestFallbackDate=date;
+		}
+		if([entry hasPrefix:displayPrefix]&&
+			(!bestExactDate||[date compare:bestExactDate]==NSOrderedDescending))
+		{
+			bestExact=path;
+			bestExactDate=date;
+		}
+	}
+
+	NSString *cachePath=bestExact?bestExact:bestFallback;
+	NSData *cacheData=cachePath?[NSData dataWithContentsOfFile:cachePath]:nil;
+	return cacheData?[NSBitmapImageRep imageRepWithData:cacheData]:nil;
 }
 
 -(NSBitmapImageRep *)imageRepFromBundle:(NSString *)name
