@@ -349,10 +349,16 @@
 		}
 	}
 
-	screenshot=[self grabScreenShot];
-	NSImage *image=[[NSImage alloc] init];
-	[image addRepresentation:screenshot];
-	[imageview setImage:image];
+	// configureSheet is called synchronously by the screen saver host.  Reading
+	// and decoding a wallpaper here can block System Settings while macOS is
+	// still changing that wallpaper, causing option requests to queue up.  The
+	// animation has already cached the image, so use it without doing file I/O.
+	if(screenshot)
+	{
+		NSImage *image=[[NSImage alloc] init];
+		[image addRepresentation:screenshot];
+		[imageview setImage:image];
+	}
 }
 
 -(void)updateDefaults:(ScreenSaverDefaults *)defaults usingConfigWindow:(NSWindow *)window
